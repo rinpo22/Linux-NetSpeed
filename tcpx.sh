@@ -6,7 +6,7 @@ export PATH
 # =================================================
 #  全局配置区 (Configuration as Data)
 # =================================================
-readonly SH_VER="100.0.5.9"
+readonly SH_VER="100.0.5.10"
 readonly GITHUB_RAW_URL="https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master"
 readonly GITHUB_API_URL="https://api.github.com/repos/ylx2016/kernel/releases"
 
@@ -1466,7 +1466,14 @@ check_sys_official_bbr() {
 		if [[ "${OS_ID}" == "ubuntu" || "${OS_ID}" == "pop" ]]; then
 			# Ubuntu 安装官方最新内核 (HWE - 硬件使能内核)
 			echo -e "${INFO} 正在为 Ubuntu 获取官方最新 HWE 内核..."
-			apt-get install --install-recommends linux-generic-hwe-${OS_VERSION_ID} -y || apt-get install linux-generic-hwe-22.04 -y || apt-get install linux-generic-hwe-20.04 -y
+			# 静默探测当前版本是否存在专属 HWE 内核包 (通常只有 LTS 有)
+			if apt-cache show linux-generic-hwe-${OS_VERSION_ID} >/dev/null 2>&1; then
+				apt-get install --install-recommends linux-generic-hwe-${OS_VERSION_ID} -y
+			else
+				echo -e "${TIP} 当前 Ubuntu 版本 (${OS_VERSION_ID}) 无专属 HWE 包 (非 LTS 版本无需 HWE)。"
+				echo -e "${INFO} 已自动为您回退并更新至常规最新 generic 内核..."
+				apt-get install linux-image-generic linux-headers-generic -y
+			fi
 		else
 			# Debian 使用 Backports 源
 			local codename=$(lsb_release -cs 2>/dev/null || echo "")
