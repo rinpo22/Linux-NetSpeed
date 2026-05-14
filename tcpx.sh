@@ -6,7 +6,7 @@ export PATH
 # =================================================
 #  全局配置区 (Configuration as Data)
 # =================================================
-readonly SH_VER="100.0.5.10"
+readonly SH_VER="100.0.5.11"
 readonly GITHUB_RAW_URL="https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master"
 readonly GITHUB_API_URL="https://api.github.com/repos/ylx2016/kernel/releases"
 
@@ -44,6 +44,7 @@ check_sys() {
 		. /etc/os-release
 		OS_ID="${ID:-unknown}"
 		OS_VERSION_ID="${VERSION_ID:-}"
+		OS_ID_LIKE="${ID_LIKE:-}" # 新增：获取上游衍生关系
 		# 兼容 Debian testing/sid 没有 VERSION_ID 的情况
 		if [[ -z "$OS_VERSION_ID" && "$OS_ID" == "debian" && -f /etc/debian_version ]]; then
 			OS_VERSION_ID=$(grep -oE '^[0-9]+' /etc/debian_version | head -n 1)
@@ -59,21 +60,17 @@ check_sys() {
 		exit 1
 	fi
 
-	# 3. 规范化 OS_TYPE (分为 CentOS 系和 Debian 系)
-	case "${OS_ID}" in
-	centos | rhel | almalinux | rocky | oracle | fedora)
+	# 3. 规范化 OS_TYPE (引入 ID_LIKE 增强泛衍生版兼容性)
+	if [[ "$OS_ID" =~ ^(centos|rhel|almalinux|rocky|oracle|fedora)$ ]] || [[ "$OS_ID_LIKE" =~ (rhel|centos|fedora) ]]; then
 		OS_TYPE="CentOS"
 		# 提取主版本号
 		OS_VERSION_ID=$(echo "$OS_VERSION_ID" | awk -F'.' '{print $1}')
-		;;
-	debian | ubuntu | pop)
+	elif [[ "$OS_ID" =~ ^(debian|ubuntu|pop|kali|linuxmint|deepin|elementary|zorin|armbian)$ ]] || [[ "$OS_ID_LIKE" =~ (debian|ubuntu) ]]; then
 		OS_TYPE="Debian"
-		;;
-	*)
-		echo -e "${ERROR} 不支持的系统分支: ${OS_ID}"
+	else
+		echo -e "${ERROR} 不支持的系统分支: ${OS_ID} (ID_LIKE: ${OS_ID_LIKE})"
 		exit 1
-		;;
-	esac
+	fi
 
 	echo -e "${INFO} 检测到系统: ${OS_TYPE} (${OS_ID} ${OS_VERSION_ID}) - 架构: ${OS_ARCH}"
 
@@ -1285,7 +1282,7 @@ update_sysctl_interactive() {
 	trap - RETURN
 
 	# 7. 应用配置并进行错误处理
-	log_info "正在应用新�� sysctl 设置..."
+	log_info "正在应用新的 sysctl 设置..."
 	if apply_output=$(sysctl -p "$CONF_FILE" 2>&1); then
 		log_info "Sysctl 设置已成功应用。"
 		echo "--- 应用输出 ---"
@@ -1405,6 +1402,7 @@ edit_sysctl_interactive() {
 # =================================================
 
 #检查官方稳定内核并安装
+#检查官方稳定内核并安装
 check_sys_official() {
 	if [[ "${OS_TYPE}" == "CentOS" ]]; then
 		[[ "${OS_ARCH}" != "x86_64" ]] && {
@@ -1421,11 +1419,11 @@ check_sys_official() {
 		fi
 	elif [[ "${OS_TYPE}" == "Debian" ]]; then
 		apt update
-		if [[ "${OS_ID}" == "ubuntu" || "${OS_ID}" == "pop" ]]; then
-			# Ubuntu 使用 generic 命名 (不分 x86 和 arm)
+		if [[ "${OS_ID}" == "ubuntu" || "${OS_ID}" == "pop" || "${OS_ID_LIKE}" == *"ubuntu"* ]]; then
+			# Ubuntu 及衍生版 (如 Mint) 使用 generic 命名
 			apt-get install linux-image-generic linux-headers-generic -y
 		else
-			# Debian 使用 amd64/arm64 命名
+			# Debian 及衍生版 (如 Kali, Armbian) 使用 amd64/arm64 命名
 			if [[ "${OS_ARCH}" == "x86_64" ]]; then
 				apt-get install linux-image-amd64 linux-headers-amd64 -y
 			elif [[ "${OS_ARCH}" == "aarch64" ]]; then
@@ -1455,7 +1453,6 @@ check_sys_official_bbr() {
 			yum install https://www.elrepo.org/elrepo-release-9.el9.elrepo.noarch.rpm -y
 			yum --enablerepo=elrepo-kernel install kernel-ml kernel-ml-headers -y --skip-broken
 		elif [[ "${OS_VERSION_ID}" == "10" ]]; then
-			# 补充 CentOS 10 的 ELRepo 源安装逻辑 (战未来)
 			yum install https://www.elrepo.org/elrepo-release-10.el10.elrepo.noarch.rpm -y
 			yum --enablerepo=elrepo-kernel install kernel-ml kernel-ml-headers -y --skip-broken
 		else
@@ -1463,32 +1460,39 @@ check_sys_official_bbr() {
 		fi
 	elif [[ "${OS_TYPE}" == "Debian" ]]; then
 		apt update
-		if [[ "${OS_ID}" == "ubuntu" || "${OS_ID}" == "pop" ]]; then
-			# Ubuntu 安装官方最新内核 (HWE - 硬件使能内核)
-			echo -e "${INFO} 正在为 Ubuntu 获取官方最新 HWE 内核..."
-			# 静默探测当前版本是否存在专属 HWE 内核包 (通常只有 LTS 有)
+		if [[ "${OS_ID}" == "ubuntu" || "${OS_ID}" == "pop" || "${OS_ID_LIKE}" == *"ubuntu"* ]]; then
+			# Ubuntu 及衍生版安装官方最新内核 (HWE - 硬件使能内核)
+			echo -e "${INFO} 正在为 Ubuntu/衍生系 获取官方最新 HWE 内核..."
 			if apt-cache show linux-generic-hwe-${OS_VERSION_ID} >/dev/null 2>&1; then
 				apt-get install --install-recommends linux-generic-hwe-${OS_VERSION_ID} -y
 			else
-				echo -e "${TIP} 当前 Ubuntu 版本 (${OS_VERSION_ID}) 无专属 HWE 包 (非 LTS 版本无需 HWE)。"
-				echo -e "${INFO} 已自动为您回退并更新至常规最新 generic 内核..."
+				echo -e "${TIP} 当前版本 (${OS_VERSION_ID}) 无专属 HWE 包，将自动为您更新至常规最新 generic 内核..."
 				apt-get install linux-image-generic linux-headers-generic -y
 			fi
 		else
-			# Debian 使用 Backports 源
-			local codename=$(lsb_release -cs 2>/dev/null || echo "")
-			[[ -z "$codename" ]] && {
-				echo -e "${ERROR} 无法获取 Debian 代号"
-				exit 1
-			}
+			# Debian 及衍生版 (如 Kali, Deepin)
+			local apt_args=""
+			# 仅为纯净 Debian 添加 Backports 源，避免搞坏 Kali 的滚动源
+			if [[ "${OS_ID}" == "debian" ]]; then
+				# 原生读取 os-release，彻底摆脱 lsb_release 依赖
+				local codename=$(awk -F= '/^VERSION_CODENAME/{print $2}' /etc/os-release | tr -d '"')
+				[[ -z "$codename" ]] && codename=$(awk -F= '/^VERSION=/{print $2}' /etc/os-release | grep -oP '(?<=\().*(?=\))')
 
-			echo "deb http://deb.debian.org/debian ${codename}-backports main" >/etc/apt/sources.list.d/${codename}-backports.list
-			apt update
+				[[ -z "$codename" ]] && {
+					echo -e "${ERROR} 无法获取 Debian 代号"
+					exit 1
+				}
+				echo "deb http://deb.debian.org/debian ${codename}-backports main" >/etc/apt/sources.list.d/${codename}-backports.list
+				apt update
+				apt_args="-t ${codename}-backports"
+			else
+				echo -e "${TIP} 检测到 ${OS_ID} (非原生 Debian)，跳过添加 Backports 源，直接从默认源安装最新内核..."
+			fi
 
 			if [[ "${OS_ARCH}" == "x86_64" ]]; then
-				apt -t "${codename}-backports" install linux-image-amd64 linux-headers-amd64 -y
+				apt $apt_args install linux-image-amd64 linux-headers-amd64 -y
 			elif [[ "${OS_ARCH}" =~ ^(arm|aarch64)$ ]]; then
-				apt -t "${codename}-backports" install linux-image-arm64 linux-headers-arm64 -y
+				apt $apt_args install linux-image-arm64 linux-headers-arm64 -y
 			fi
 		fi
 	fi
@@ -1554,15 +1558,15 @@ check_sys_official_zen() {
 		echo -e "${ERROR} Zen内核仅支持x86_64 !"
 		exit 1
 	}
-	if [[ "${OS_ID}" == "debian" ]]; then
+	if [[ "${OS_ID}" == "debian" || "${OS_ID}" == "kali" || "${OS_ID_LIKE}" == *"debian"* ]] && [[ "${OS_ID_LIKE}" != *"ubuntu"* && "${OS_ID}" != "ubuntu" && "${OS_ID}" != "pop" ]]; then
 		curl -sL 'https://liquorix.net/add-liquorix-repo.sh' | bash
 		apt-get install linux-image-liquorix-amd64 linux-headers-liquorix-amd64 -y
-	elif [[ "${OS_ID}" == "ubuntu" ]]; then
+	elif [[ "${OS_ID}" == "ubuntu" || "${OS_ID}" == "pop" || "${OS_ID_LIKE}" == *"ubuntu"* ]]; then
 		apt-get install software-properties-common -y
 		add-apt-repository ppa:damentz/liquorix -y && apt-get update
 		apt-get install linux-image-liquorix-amd64 linux-headers-liquorix-amd64 -y
 	else
-		echo -e "${ERROR} Zen内核当前脚本仅支持 Debian/Ubuntu !" && exit 1
+		echo -e "${ERROR} Zen内核当前脚本仅支持 Debian/Ubuntu 及衍生版 !" && exit 1
 	fi
 	BBR_grub
 	echo -e "${TIP} 内核安装完毕。"
