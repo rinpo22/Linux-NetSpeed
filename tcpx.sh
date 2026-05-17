@@ -6,7 +6,7 @@ export PATH
 # =================================================
 #  全局配置区 (Configuration as Data)
 # =================================================
-readonly SH_VER="100.0.5.13"
+readonly SH_VER="100.0.5.14"
 readonly GITHUB_RAW_URL="https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master"
 readonly GITHUB_API_URL="https://api.github.com/repos/ylx2016/kernel/releases"
 
@@ -843,7 +843,7 @@ show_kernels() {
 	echo -e "${INFO} ==================================================="
 	echo -e "${INFO} 当前系统中已安装的内核包："
 	if [[ "${OS_TYPE}" == "CentOS" ]]; then
-		rpm -qa | grep -E "^kernel-(image|core|modules|devel|headers)" | sort -V
+		rpm -qa | grep -E "^kernel(-ml|-lt)?(-image|-core|-modules|-devel|-headers)?-[0-9]" | sort -V
 		echo -e "${INFO} ==================================================="
 		echo -e "${INFO} GRUB 引导项 (通常 index=0 为默认启动项)："
 		grubby --info=ALL | grep -E "^kernel|^index"
@@ -870,7 +870,7 @@ delete_kernel_custom() {
 
 	# 使用更精准的包查询方式，防止名字过长被截断
 	if [[ "${OS_TYPE}" == "CentOS" ]]; then
-		mapfile -t kernel_list < <(rpm -qa | grep -E "^kernel-(image|core|modules|devel|headers)" | sort -V)
+		mapfile -t kernel_list < <(rpm -qa | grep -E "^kernel(-ml|-lt)?(-image|-core|-modules|-devel|-headers)?-[0-9]" | sort -V)
 	elif [[ "${OS_TYPE}" == "Debian" ]]; then
 		mapfile -t kernel_list < <(dpkg-query -W -f='${Package}\n' | grep -E "^linux-(image|headers|modules)" | sort -V)
 	fi
