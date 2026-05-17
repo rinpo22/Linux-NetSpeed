@@ -243,111 +243,111 @@ remove_old_headers() {
 # 终极内核安装函数
 # 用法: install_kernel_generic <内核描述名称> <Headers_URL> <Image_URL> <版本号>
 install_kernel_generic() {
-    local kernel_desc="$1"
-    local head_url="$2"
-    local img_url="$3"
-    local kernel_version="$4" # 新增参数，用于 UI 显示
+	local kernel_desc="$1"
+	local head_url="$2"
+	local img_url="$3"
+	local kernel_version="$4" # 新增参数，用于 UI 显示
 
-    echo -e "${INFO} ================================================"
-    if [[ -n "$kernel_version" ]]; then
-        echo -e "${INFO} 开始安装: ${kernel_desc} (版本: \033[32m${kernel_version}\033[0m)"
-    else
-        echo -e "${INFO} 开始安装: ${kernel_desc}"
-    fi
-    echo -e "${INFO} ================================================"
+	echo -e "${INFO} ================================================"
+	if [[ -n "$kernel_version" ]]; then
+		echo -e "${INFO} 开始安装: ${kernel_desc} (版本: \033[32m${kernel_version}\033[0m)"
+	else
+		echo -e "${INFO} 开始安装: ${kernel_desc}"
+	fi
+	echo -e "${INFO} ================================================"
 
-    # 只强制检查 img_url，因为某些内核（如 Cloud）本身可能不强制要求 Headers
-    if [[ -z "$img_url" ]]; then
-        echo -e "${ERROR} 传入的镜像文件下载链接为空，可能是 API 解析失败或上游移除了文件！"
-        exit 1
-    fi
+	# 只强制检查 img_url，因为某些内核（如 Cloud）本身可能不强制要求 Headers
+	if [[ -z "$img_url" ]]; then
+		echo -e "${ERROR} 传入的镜像文件下载链接为空，可能是 API 解析失败或上游移除了文件！"
+		exit 1
+	fi
 
-    # 清理旧 headers
-    remove_old_headers
+	# 清理旧 headers
+	remove_old_headers
 
-    # 创建独立的工作目录
-    local work_dir="/tmp/kernel_install_$(date +%s)"
-    mkdir -p "$work_dir" && cd "$work_dir" || exit 1
+	# 创建独立的工作目录
+	local work_dir="/tmp/kernel_install_$(date +%s)"
+	mkdir -p "$work_dir" && cd "$work_dir" || exit 1
 
-    # 根据系统执行不同的下载和安装逻辑
-    if [[ "${OS_TYPE}" == "CentOS" ]]; then
-        local head_file="kernel-headers.rpm"
-        local img_file="kernel-image.rpm"
+	# 根据系统执行不同的下载和安装逻辑
+	if [[ "${OS_TYPE}" == "CentOS" ]]; then
+		local head_file="kernel-headers.rpm"
+		local img_file="kernel-image.rpm"
 
-        [[ -n "$head_url" ]] && { safe_wget "$head_url" "$head_file" || exit 1; }
-        safe_wget "$img_url" "$img_file" || exit 1
+		[[ -n "$head_url" ]] && { safe_wget "$head_url" "$head_file" || exit 1; }
+		safe_wget "$img_url" "$img_file" || exit 1
 
-        echo -e "${INFO} 正在执行 YUM 安装..."
-        if [[ -n "$head_url" ]]; then
-            yum install -y "$img_file" "$head_file"
-        else
-            yum install -y "$img_file"
-        fi
+		echo -e "${INFO} 正在执行 YUM 安装..."
+		if [[ -n "$head_url" ]]; then
+			yum install -y "$img_file" "$head_file"
+		else
+			yum install -y "$img_file"
+		fi
 
-    elif [[ "${OS_TYPE}" == "Debian" ]]; then
-        local head_file="linux-headers.deb"
-        local img_file="linux-image.deb"
+	elif [[ "${OS_TYPE}" == "Debian" ]]; then
+		local head_file="linux-headers.deb"
+		local img_file="linux-image.deb"
 
-        [[ -n "$head_url" ]] && { safe_wget "$head_url" "$head_file" || exit 1; }
-        safe_wget "$img_url" "$img_file" || exit 1
+		[[ -n "$head_url" ]] && { safe_wget "$head_url" "$head_file" || exit 1; }
+		safe_wget "$img_url" "$img_file" || exit 1
 
-        echo -e "${INFO} 正在执行 DPKG 安装..."
-        dpkg -i "$img_file"
-        [[ -n "$head_url" ]] && dpkg -i "$head_file"
-        
-        echo -e "${INFO} 正在检查并修复可能缺失的依赖环境..."
-        apt-get install -f -y
-    fi
+		echo -e "${INFO} 正在执行 DPKG 安装..."
+		dpkg -i "$img_file"
+		[[ -n "$head_url" ]] && dpkg -i "$head_file"
 
-    # 善后清理
-    cd /tmp && rm -rf "$work_dir"
+		echo -e "${INFO} 正在检查并修复可能缺失的依赖环境..."
+		apt-get install -f -y
+	fi
 
-    echo -e "${INFO} ${kernel_desc} 内核包安装完成，正在更新系统引导..."
-    BBR_grub
+	# 善后清理
+	cd /tmp && rm -rf "$work_dir"
+
+	echo -e "${INFO} ${kernel_desc} 内核包安装完成，正在更新系统引导..."
+	BBR_grub
 }
 
 # 安装 BBR 原版内核 (调用引擎)
 installbbr() {
-    local head_url=""
-    local img_url=""
-    local tag_kw=""
-    local arch_kw=""
-    local img_kw=""
+	local head_url=""
+	local img_url=""
+	local tag_kw=""
+	local arch_kw=""
+	local img_kw=""
 
-    if [[ "${OS_TYPE}" == "CentOS" ]]; then
-        # 适配新编译的 CentOS Cloud 内核
-        tag_kw="CentOS_Kernel_Cloud"
-        arch_kw="x86_64"
-        # 【核心修复 1】直接匹配 kernel-加数字，从源头完美避开 headers 和 devel
-        img_kw="kernel-[0-9]" 
-    elif [[ "${OS_TYPE}" == "Debian" ]]; then
-        # 适配新编译的 Debian Cloud 内核
-        tag_kw="Debian_Kernel_Cloud"
-        arch_kw="amd64"
-        img_kw="image"   # Debian dpkg 生成的包名为 linux-image 开头
-        if [[ "$OS_ARCH" == "aarch64" ]]; then
-            tag_kw="Debian_Kernel_Cloud_arm64"
-            arch_kw="arm64"
-        fi
-    fi
+	if [[ "${OS_TYPE}" == "CentOS" ]]; then
+		# 适配新编译的 CentOS Cloud 内核
+		tag_kw="CentOS_Kernel_Cloud"
+		arch_kw="x86_64"
+		# 【核心修复 1】直接匹配 kernel-加数字，从源头完美避开 headers 和 devel
+		img_kw="kernel-[0-9]"
+	elif [[ "${OS_TYPE}" == "Debian" ]]; then
+		# 适配新编译的 Debian Cloud 内核
+		tag_kw="Debian_Kernel_Cloud"
+		arch_kw="amd64"
+		img_kw="image" # Debian dpkg 生成的包名为 linux-image 开头
+		if [[ "$OS_ARCH" == "aarch64" ]]; then
+			tag_kw="Debian_Kernel_Cloud_arm64"
+			arch_kw="arm64"
+		fi
+	fi
 
-    echo -e "${INFO} 正在向 Github/ylx2016 请求最新 ${tag_kw} 内核数据..."
-    
-    # 获取下载链接 (现在抓取到的绝对纯净，无需二次 grep -v)
-    head_url=$(get_github_asset "ylx2016/kernel" "${tag_kw}" "headers" "${arch_kw}")
-    img_url=$(get_github_asset "ylx2016/kernel" "${tag_kw}" "${img_kw}" "${arch_kw}")
+	echo -e "${INFO} 正在向 Github/ylx2016 请求最新 ${tag_kw} 内核数据..."
 
-    # 【核心修复 2】利用 -oE 标准正则提取版本号，避免部分系统不支持 -P 导致版本号变空
-    local kernel_version=$(echo "$img_url" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
-    
-    if [[ -n "$kernel_version" ]]; then
-        echo -e "${INFO} 解析成功！获取到的最新云端内核版本为: \033[32m${kernel_version}\033[0m"
-    else
-        echo -e "${INFO} 解析成功！已获取到下载链接，但未能匹配出纯净版本号。"
-    fi
+	# 获取下载链接 (现在抓取到的绝对纯净，无需二次 grep -v)
+	head_url=$(get_github_asset "ylx2016/kernel" "${tag_kw}" "headers" "${arch_kw}")
+	img_url=$(get_github_asset "ylx2016/kernel" "${tag_kw}" "${img_kw}" "${arch_kw}")
 
-    # 将解析出的版本号作为第四个参数传递给安装函数
-    install_kernel_generic "BBR Cloud 优化内核" "$head_url" "$img_url" "$kernel_version"
+	# 【核心修复 2】利用 -oE 标准正则提取版本号，避免部分系统不支持 -P 导致版本号变空
+	local kernel_version=$(echo "$img_url" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
+
+	if [[ -n "$kernel_version" ]]; then
+		echo -e "${INFO} 解析成功！获取到的最新云端内核版本为: \033[32m${kernel_version}\033[0m"
+	else
+		echo -e "${INFO} 解析成功！已获取到下载链接，但未能匹配出纯净版本号。"
+	fi
+
+	# 将解析出的版本号作为第四个参数传递给安装函数
+	install_kernel_generic "BBR Cloud 优化内核" "$head_url" "$img_url" "$kernel_version"
 }
 
 # 安装 BBRplus 新版内核 (调用引擎)
@@ -1110,7 +1110,7 @@ start_menu() {
  ${GREEN_FONT_PREFIX}0.${FONT_COLOR_SUFFIX} 升级脚本
  ${GREEN_FONT_PREFIX}91.${FONT_COLOR_SUFFIX} 切换到卸载内核版本
  ———————————————————————————— 内核安装 —————————————————————————————
- ${GREEN_FONT_PREFIX}1.${FONT_COLOR_SUFFIX} 安装 BBR自编编译内核         ${GREEN_FONT_PREFIX}7.${FONT_COLOR_SUFFIX} 安装 官方稳定内核
+ ${GREEN_FONT_PREFIX}1.${FONT_COLOR_SUFFIX} 安装 BBR自编编译内核     ${GREEN_FONT_PREFIX}7.${FONT_COLOR_SUFFIX} 安装 官方稳定内核
  ${GREEN_FONT_PREFIX}2.${FONT_COLOR_SUFFIX} 安装 BBRplus版内核       ${GREEN_FONT_PREFIX}8.${FONT_COLOR_SUFFIX} 安装 官方最新内核
  ${GREEN_FONT_PREFIX}3.${FONT_COLOR_SUFFIX} 安装 Lotserver(锐速)内核 ${GREEN_FONT_PREFIX}9.${FONT_COLOR_SUFFIX} 安装 XANMOD(main)
  ${GREEN_FONT_PREFIX}4.${FONT_COLOR_SUFFIX} 安装 官方cloud内核       ${GREEN_FONT_PREFIX}10.${FONT_COLOR_SUFFIX} 安装 XANMOD(LTS)
